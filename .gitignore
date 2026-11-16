@@ -2,3 +2,6 @@
 /*.nro
 /*.elf
 /*.nacp
+
+/third_party/stb/stb_image.h
+/third_party/stb/stb_image.h.tmp

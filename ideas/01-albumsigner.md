@@ -2,114 +2,145 @@
 
 ## Goal
 
-Build a fully native Nintendo Switch homebrew application that prepares user-selected images and videos for the official Album viewer.
+Build a fully native, offline Nintendo Switch homebrew application that places selected images and videos into the Switch Album as entries attributed to a user-selected installed game, with the current console date/time.
 
-The source media stays on the SD card. The NRO performs all processing locally and writes the prepared output to the SD card. It must not upload media to a website or depend on a remote signing API.
+The NRO reads media directly from the SD card, prepares the Album-specific metadata locally, and writes the resulting file into the appropriate Album directory. There is no website, upload, account, or remote signing API.
 
-The resulting files should be usable by the stock Album viewer on an unmodified target console when that console supports the relevant Album format and accepts the generated authentication data.
+The intended result is an Album entry that the stock Album viewer can display and play on a compatible target console, including an unmodified console. Compatibility must be verified for each target platform/format generation before it is advertised.
 
-## User-facing requirements
+## Runtime requirements
 
-- Browse/select an image or video directly from `sdmc:`.
-- Choose an installed game from a list populated from the system's installed application records.
-- Show the game's readable name and 16-digit application Title ID.
-- Allow a manual Title ID fallback when a game is not returned by the installed-title service.
-- Allow the capture date/time to be selected, defaulting to the current local time.
-- Choose an output mode: a staging folder first, or direct placement in the SD Album folder after an explicit confirmation.
-- Never overwrite existing album files. Generate a unique timestamp suffix when necessary.
-- Show progress, output size, and actionable errors.
-- Work fully offline.
+- The NRO is allowed to require **Application mode**. Applet mode is explicitly not a target.
+- On startup, check `appletGetAppletType()`. If the NRO is not running as `AppletType_Application`, show a clear message and exit before processing files.
+- The NRO cannot grant itself Application mode. The user must launch it through a homebrew setup that provides the Application-mode environment (for example, a title-override launch).
+- Application mode provides a larger application memory budget, but it does not make RAM or file size unlimited.
+- The program should use the normal libnx SD filesystem APIs and the available system services directly.
 
-## Media formats and validation
+## Intended workflow
+
+1. Start AlbumSigner in Application mode.
+2. Browse the SD card and select one image or video.
+3. Choose an installed game from a list populated by the Switch's installed application records. Show its icon/name and 16-digit application Title ID.
+4. The capture timestamp defaults automatically to the **current local time from the console's clock**. No old timestamp should be copied from the source media.
+5. Select **Add to Album**.
+6. The NRO prepares a separate Album-ready output file, leaving the original input untouched.
+7. Write the output directly into the SD Album directory under the current date:
+   `Nintendo/Album/YYYY/MM/DD/`
+8. Use the Album filename convention and choose a free per-second index. Never overwrite an existing entry.
+9. Display the created path, media type, selected game, timestamp, and any compatibility warning.
+
+The output should look like a capture made just now by the selected game. This is an Album attribution/metadata entry: it does not modify the selected game's save data or claim that the game process actually generated the media.
+
+## Title selection and Album attribution
+
+- Enumerate installed application records through libnx NS services, including `nsListApplicationRecord`.
+- Read the localized application name and icon/control metadata using `nsGetApplicationControlData`.
+- Use the selected installed game's actual application Title ID as the source of the attribution.
+- Keep the 64-bit application Title ID distinct from any Album-specific 128-bit identifier or filename field. Implement the mapping only after confirming it against known-good captures and the target Album generation.
+- A manual raw-ID field may be added later for debugging, but the normal UI should use the installed-game list.
+
+libnx API reference: `https://switchbrew.github.io/libnx/ns_8h.html`.
+
+## Offline and storage requirements
+
+- No network access is needed or permitted by the normal processing path.
+- All decoding, metadata generation, authentication operations, and file writing happen on the Switch.
+- There is no arbitrary 30 MB or 50 MB web-upload limit.
+- Keep memory use bounded: stream large media and hash-table generation in chunks rather than reading the entire file into RAM.
+- Check free space before writing. FAT32 cannot store an individual file of 4 GiB or larger; other filesystem and Album limits still apply.
+- Write to a temporary file first, flush and validate it, then rename it into the final Album directory.
+- Leave the original image/video unchanged. Never overwrite existing Album entries.
+
+## Media format and validation
 
 ### Images
 
-- Accept common image inputs where a decoder is available (initial target: JPEG and PNG).
-- Convert to the dimensions and JPEG profile expected by the Album viewer.
-- Write the required EXIF fields, timestamp, and MakerNote.
-- Calculate the appropriate Album MAC for the target format generation.
-- Verify the output structure before placing it in the final output folder.
+- Initial inputs: JPEG and PNG; add other decoders only when available and tested.
+- Produce a JPEG profile and dimensions accepted by the target Album implementation.
+- Write the correct EXIF timestamp and Nintendo MakerNote fields.
+- Calculate the target generation's Album MAC, and verify the final structure before committing the output.
 
-The Album validation scheme is version-dependent. Older systems used HMAC-SHA256; from system version 3.0.0 the documented path uses SHA-256 followed by SPL AES-CMAC. The implementation must detect the available path and must not silently write a file with a guessed or invalid MAC.
+The documented screenshot validation changed across system generations: older firmware used HMAC-SHA256, while newer Switch 1 firmware calculates SHA-256 and uses SPL AES-CMAC. Do not hardcode guessed MAC bytes or mark an output successful if the system crypto operation fails.
 
 ### Videos
 
-- Accept common input containers only when a decoder/demuxer is available.
-- Produce an MP4 stream compatible with the Switch Album playback path; the current Flexlion page describes 720p H.264 output.
-- Generate the required JPEG preview/thumbnail and video MakerNote.
-- Generate the encrypted movie metadata and per-chunk SHA-256 hash table. The documented chunk size is `0x40000` (256 KiB).
-- Stream media data and hash chunks instead of loading an entire large video into RAM.
-- Validate MP4 structure, metadata lengths, hash-table coverage, and output sizes before writing the final file.
+- Initial input target: MP4; additional containers only when a reliable local demux/decode path is available.
+- Produce a Switch Album-compatible MP4 stream. The existing Flexlion page describes 720p H.264 output, which is a useful initial compatibility target, not proof that every codec/profile is accepted.
+- Generate the JPEG preview/thumbnail and required video MakerNote.
+- Generate encrypted movie metadata and the per-chunk SHA-256 hash table. The documented chunk size is `0x40000` (256 KiB).
+- Stream video data and hashes in bounded chunks.
+- Validate the MP4 structure, metadata lengths, thumbnail, hash-table coverage, and output size.
 
-Video support is a separate milestone from image support. A regular MP4 with a renamed extension is not a valid Album video.
+A normal MP4 with an EXIF block or renamed extension is not automatically a valid Album video. Video support is a separate milestone after image support.
 
-## Title ID handling
+## Cryptographic backends
 
-The user should select an installed title by its readable game name. The NRO can enumerate installed application records through libnx's `nsListApplicationRecord` and retrieve control data through `nsGetApplicationControlData`.
+- Use the console's supported system crypto service for the target Album generation where the required operation is available.
+- Never commit console secrets, private key material, console dumps, or reusable key dumps to this repository.
+- Switch 1 needs a version-aware path for the legacy HMAC generation and the newer SPL CMAC path.
+- Switch 2 uses a substantially different SPL service interface. Its public service documentation describes a separate `spl:da` interface, including commands associated with loading the screenshot/movie CMAC keys. Treat it as a distinct backend rather than assuming Switch 1 calls work unchanged.
+- If a required crypto operation is unavailable, stop with a clear unsupported-platform/firmware message. Do not create a file with a fabricated MAC.
 
-The user-facing 64-bit application Title ID must not be confused with the Album filename's title-specific identifier. The exact mapping between those values must be implemented from verified Album behavior, not guessed or substituted directly.
-
-## Size and performance
-
-- There should be no arbitrary 30 MB or 50 MB upload limit because media is read locally from SD.
-- Process files incrementally so memory use does not scale with the full input file size.
-- Available SD space and filesystem limits still apply. In particular, a FAT32 volume cannot store a single file of 4 GiB or larger.
-- Decoding/re-encoding long video on Switch 1 may be slow and memory-intensive. Prefer streaming and avoid unnecessary transcoding when the source already matches the target profile.
-- Do not claim unlimited file sizes: the actual maximum is constrained by filesystem, free space, decoder limits, and Album/system limits.
+Research references:
+- Capture services: `https://switchbrew.org/wiki/Capture_services`
+- SPL services: `https://switchbrew.org/wiki/SPL_services`
+- libnx SPL API: `https://switchbrew.github.io/libnx/spl_8h.html`
 
 ## Compatibility plan
 
 ### Switch 1
 
-Switch 1 is the first development and validation target because this repository builds a libnx NRO for devkitA64. The implementation should test both the legacy image-MAC path and the modern SPL CMAC path where appropriate.
+- First NRO development target, using the repository's devkitA64/libnx toolchain.
+- Require Application mode.
+- Test image generation first, then video.
+- Test the relevant legacy and SPL-CMAC validation generations using known-good, locally captured fixtures.
 
 ### Switch 2
 
-Switch 2 requires a separate compatibility check. Its SPL services were overhauled, and the key-derivation interfaces exposed on Switch 1 are not exposed in the same way. Nintendo also documents importing content from a Switch console's microSD card into Switch 2 system memory; this is a useful official transfer path, but it does not by itself prove that files created by this tool will pass Switch 2 validation.
-
-Do not advertise Switch 2 support until the output has been tested through the actual Switch 2 Album import/view path on current retail firmware.
+- Treat the Switch 2 Album format and cryptographic backend separately.
+- The NRO is not expected to run on an unmodified target console. It runs offline on the homebrew/development console and prepares files for transfer/import to the target.
+- Test generated images and videos with the actual Switch 2 Album import/view path on current retail firmware.
+- Do not advertise Switch 2 support until this real-device test passes. An official SD-card import function is only a transfer path; it does not prove that an arbitrary generated file passes Album validation.
 
 ### Unmodified target consoles
 
-The NRO itself runs on the development/source console. The generated files can then be copied to another console's supported Album storage/import path. Acceptance depends on the target console's Album parser, media profile, and MAC/hash validation. A selected Title ID alone is not a signature.
+- No homebrew needs to run on the target console. The target only receives and opens the prepared media through its supported Album storage/import path.
+- Whether the target displays the entry depends on its Album parser, accepted media profile, identifier mapping, and MAC/hash validation.
+- “Works on all Switch systems” is a test target, not a claim to make before compatibility has been demonstrated.
 
 ## Implementation milestones
 
-1. **Format research and test fixtures**
-   - Document the image MakerNote layout and exact Title ID-to-Album-ID mapping.
-   - Collect known-good stock Album files as local test fixtures.
-   - Establish a test harness that compares generated files with stock files without embedding any private console material.
+1. **Application-mode shell and title browser**
+   - Detect and require Application mode.
+   - Mount/access SD storage and browse files.
+   - Enumerate installed titles and display game name/icon/Title ID.
+   - Read the console's current local timestamp.
+   - Show a dry-run destination path without writing media.
 
 2. **Image pipeline**
-   - SD file browser and installed-title picker.
-   - JPEG/PNG decode, 1280x720 output, EXIF/MakerNote writer.
-   - Version-aware MAC backend and output validation.
-   - First end-to-end Switch 1 test.
+   - JPEG/PNG decode and output profile.
+   - EXIF/MakerNote generation.
+   - Version-aware system crypto backend.
+   - Collision-safe writing into the date-based Album directory.
+   - First end-to-end Switch 1 test, then target-console playback tests.
 
 3. **Video pipeline**
-   - MP4 demux/decode/encode strategy.
-   - Thumbnail, MakerNote encryption, MAC, and chunk-hash table.
-   - Large-file streaming and recoverable output writes.
-   - Playback tests at multiple sizes and durations.
+   - Local MP4 input validation and conversion strategy.
+   - Thumbnail, encrypted MakerNote, MAC, and chunk-hash table.
+   - Streaming processing for large files.
+   - Playback tests across durations and file sizes.
 
 4. **Switch 2 compatibility**
-   - Verify the official Switch 1 microSD import path.
-   - Test generated images and videos separately.
-   - Add a Switch 2 profile only after a passing real-device test.
+   - Research and implement its separate crypto backend if available to the source environment.
+   - Verify the official import/view path with generated image and video fixtures.
+   - Add a Switch 2 profile only after successful retail-device tests.
 
-## Security and data safety
+## References
 
-- Do not commit hardcoded console secrets, console dumps, or private key material.
-- Prefer the platform's supported crypto service when available.
-- If the required crypto operation is unavailable, stop with a clear unsupported-firmware message rather than outputting invalid files.
-- Keep originals untouched.
-- Write to a temporary file first, flush it, validate it, and only then move it into the output directory.
-
-## Known references
-
-- Flexlion's current public page: `https://flexlion.github.io/albumsigner.html` (currently documents a 50 MB web upload cap, JPEG image processing, and 720p H.264 video output).
+- Flexlion Album Signer: `https://flexlion.github.io/albumsigner.html` (the current page documents a 50 MB web upload cap, JPEG image processing, and 720p H.264 video output).
 - Switchbrew Capture services: `https://switchbrew.org/wiki/Capture_services`.
+- Switchbrew SPL services: `https://switchbrew.org/wiki/SPL_services`.
 - Switchbrew SD filesystem: `https://switchbrew.org/wiki/SD_Filesystem`.
-- libnx `ns.h` API reference: `https://switchbrew.github.io/libnx/ns_8h.html`.
-- libnx `spl.h` API reference: `https://switchbrew.github.io/libnx/spl_8h.html`.
+- libnx NS API: `https://switchbrew.github.io/libnx/ns_8h.html`.
+- libnx SPL API: `https://switchbrew.github.io/libnx/spl_8h.html`.
 - Nintendo Switch 2 Album management/import support: `https://www.nintendo.com/de-de/Support/Fehlersuche/Screenshots-und-aufgenommene-Videos-auf-Nintendo-Switch-2-verwalten-2881207.html`.

@@ -65,6 +65,7 @@ jobs:
           mkdir -p dist
           find . -maxdepth 3 -type f -name '*.nro' -not -path './dist/*' -print -exec cp '{}' dist/ \;
           test -n "$(find dist -maxdepth 1 -type f -name '*.nro' -print -quit)"
+          cp THIRD_PARTY_NOTICES.md dist/
 
       - name: Upload tested NROs
         uses: actions/upload-artifact@v4

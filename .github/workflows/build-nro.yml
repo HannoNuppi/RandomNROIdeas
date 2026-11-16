@@ -32,7 +32,10 @@ jobs:
         run: |
           set -euo pipefail
           : "${DEVKITPRO:?DEVKITPRO is not set in the build image}"
-          command -v aarch64-none-elf-gcc
+          compiler="${DEVKITPRO}/devkitA64/bin/aarch64-none-elf-gcc"
+          test -x "$compiler"
+          echo "${DEVKITPRO}/devkitA64/bin" >> "$GITHUB_PATH"
+          "$compiler" --version
           test -f "${DEVKITPRO}/libnx/switch_rules"
 
       - name: Build NRO

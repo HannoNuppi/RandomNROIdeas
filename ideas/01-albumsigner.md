@@ -4,7 +4,7 @@
 
 Build a fully native, offline Nintendo Switch homebrew application that places selected images and videos into the Switch Album as entries attributed to a user-selected installed game, with the current console date/time.
 
-The NRO reads media directly from the SD card and processes it offline. The image prototype uses the Switch system's screenshot-saving service. Video support is being developed as a separate pipeline: the current step inspects MP4 structure and codec metadata, while the Album movie writer (thumbnail, MakerNote, CMAC, and chunk hashes) remains future work. There is no website, upload, account, or remote signing API in the intended runtime.
+The NRO reads media directly from the SD card and processes it offline. The image prototype uses the Switch system's screenshot-saving service. The video path now has MP4 inspection and a streamed `caps:c` AlbumMovieWriteStream backend; the required thumbnail, MakerNote, encrypted metadata, CMAC, and chunk-hash generator remains future work. There is no website, upload, account, or remote signing API in the intended runtime.
 
 The intended result is an Album entry that the stock Album viewer can display and play on a compatible target console, including an unmodified console. Compatibility must be verified for each target platform/format generation before it is advertised.
 
@@ -23,11 +23,9 @@ The intended result is an Album entry that the stock Album viewer can display an
 3. Choose an installed game from a list populated by the Switch's installed application records. Show its icon/name and 16-digit application Title ID.
 4. The capture timestamp defaults automatically to the **current local time from the console's clock**. No old timestamp should be copied from the source media.
 5. Select **Add to Album**.
-6. The NRO prepares a separate Album-ready output file, leaving the original input untouched.
-7. Write the output directly into the SD Album directory under the current date:
-   `Nintendo/Album/YYYY/MM/DD/`
-8. Use the Album filename convention and choose a free per-second index. Never overwrite an existing entry.
-9. Display the created path, media type, selected game, timestamp, and any compatibility warning.
+6. For images, call the Switch screenshot service. For videos, prepare a complete Album movie package, then use the Switch Album movie write stream. The original input remains untouched.
+7. Let the system Album service create the date/title identity and commit the new entry. Do not write raw files into the Album directory directly.
+8. Display the resulting entry details, media type, selected game, timestamp, and any compatibility warning.
 
 The output should look like a capture made just now by the selected game. This is an Album attribution/metadata entry: it does not modify the selected game's save data or claim that the game process actually generated the media.
 
@@ -48,7 +46,7 @@ libnx API reference: `https://switchbrew.github.io/libnx/ns_8h.html`.
 - There is no arbitrary 30 MB or 50 MB web-upload limit.
 - Keep memory use bounded: stream large media and hash-table generation in chunks rather than reading the entire file into RAM.
 - Check free space before writing. FAT32 cannot store an individual file of 4 GiB or larger; other filesystem and Album limits still apply.
-- Write to a temporary file first, flush and validate it, then rename it into the final Album directory.
+- Use the system services' temporary/commit flow: `caps:su` for screenshot images and `caps:c`'s transactional MovieWriteStream for videos. Do not manually rename arbitrary files into the protected Album structure.
 - Leave the original image/video unchanged. Never overwrite existing Album entries.
 
 ## Media format and validation
@@ -70,10 +68,13 @@ The earlier raw-file signing path (manual EXIF/MakerNote/MAC writing) is therefo
 - Implemented first step: inspect MP4 ISO BMFF boxes and the first video/audio sample descriptions without decoding or modifying the file. The probe reports container structure, H.264/HEVC/AV1/MPEG-4 Visual codec, dimensions, AAC/other audio, duration, fragmented layout, and moov-before-mdat layout.
 - Initial preflight candidate: non-fragmented H.264/AVC at exactly 1280x720, with AAC audio or no audio. This is a conservative input target, not proof of Album acceptance.
 - Video transcoding/remuxing is not implemented. The NRO must not label a passing MP4 as Album-ready until the full metadata and authentication pipeline exists.
+- Implemented backend: use `capscGenerateCurrentAlbumFileId()` and libnx's `capscOpenAlbumMovieWriteStream()` to create a normal Movie entry. The backend writes the MP4 to the data section and a caller-supplied metadata package to the meta section, then calls Finish/Commit. It streams in 256-KiB blocks, enforces the documented 2-GiB media-data limit, and discards the temporary stream after a failure.
+- The backend is not connected to the UI and must only receive a complete, correctly formatted metadata package. It does not invent or sign metadata.
+- Investigate the system's `caps:sc` ProtoMovieMetaData commands (1106/1107), which Nintendo uses for movie thumbnail/metadata generation. Their input structure needs further verification; do not infer the undocumented fields.
 - Generate or extract a JPEG preview/thumbnail using a verified local decode path.
 - Generate encrypted movie metadata and the per-chunk SHA-256 hash table. The documented chunk size is `0x40000` (256 KiB).
-- Add the movie CMAC using the platform's supported system crypto interface, once the exact Switch 1 and Switch 2 call paths and metadata layout are validated.
-- Stream video data and hashes in bounded chunks.
+- Prefer the system's `caps:sc` ProtoMovieMetaData command if its input format can be reconstructed from supported documentation; otherwise build a version-aware crypto path using the platform's supported system crypto interface.
+- Add end-to-end hardware verification of the service stream, metadata acceptance, and playback.
 - Validate the MP4 structure, metadata lengths, thumbnail, hash-table coverage, and output size.
 
 A normal MP4 with an EXIF block or renamed extension is not automatically a valid Album video. Video support is a separate milestone after image support.
@@ -130,9 +131,10 @@ Research references:
    - First end-to-end Switch 1 test, then target-console playback tests.
 
 3. **Video pipeline**
-   - Local MP4 input validation and conversion strategy.
-   - Thumbnail, encrypted MakerNote, MAC, and chunk-hash table.
-   - Streaming processing for large files.
+   - Local MP4 input validation and conversion strategy. (MP4 preflight implemented.)
+   - `caps:c` AlbumMovieWriteStream backend. (Implemented; stream/commit path covered by host mocks and target compilation.)
+   - Thumbnail, encrypted MakerNote, CMAC, and chunk-hash metadata generator. (Not implemented.)
+   - Connect the metadata generator to the stream writer only after its layout is verified.
    - Playback tests across durations and file sizes.
 
 4. **Switch 2 compatibility**

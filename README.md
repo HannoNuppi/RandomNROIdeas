@@ -8,17 +8,16 @@ Every push to `main` runs the Switch compiler and a CI smoke test. The test job 
 
 Only after the entire test job succeeds, GitHub Actions publishes a **GitHub prerelease** with every `.nro` found in the build output. Each release gets a unique `build-<run>-<attempt>` tag. Pull requests are build-tested but do not publish releases.
 
-The workflow installs devkitPro's JPEG and PNG codec portlibs before compiling.
+The build fetches a pinned stb_image header at compile time; no image codec packages or package manager are needed.
 
 - [Latest build](https://github.com/HannoNuppi/RandomNROIdeas/actions/workflows/build-nro.yml)
 - [All GitHub releases](https://github.com/HannoNuppi/RandomNROIdeas/releases)
 
 ## Local build
 
-Install the devkitPro Switch development packages (`switch-dev`) and the image codec libraries in devkitPro MSYS2:
+Install the devkitPro Switch development packages (`switch-dev`) in devkitPro MSYS2. The first build downloads the pinned image decoder header:
 
 ```sh
-pacman -S --needed switch-libjpeg-turbo switch-libpng
 make
 ```
 

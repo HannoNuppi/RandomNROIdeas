@@ -40,3 +40,7 @@ The initial design for a native, offline AlbumSigner is in [ideas/01-albumsigner
 It will prepare images and videos locally on the SD card, with installed-game selection,
 firmware-aware Album metadata, and a streaming video pipeline. The actual signer is not
 marked complete until its generated files pass real-device validation.
+
+### AlbumSigner launch mode
+
+AlbumSigner is intended to run as a normal **Application-mode** NRO, not as an applet. Its workflow is fully offline and writes a separate Album-ready copy under `Nintendo/Album/YYYY/MM/DD/`, attributed to the selected installed game and timestamped with the console's current local time. See [the implementation plan](ideas/01-albumsigner.md).

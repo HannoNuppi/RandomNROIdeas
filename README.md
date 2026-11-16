@@ -33,3 +33,10 @@ The output is `RandomNROIdeas.nro` in the repository root.
 The starter application displays a simple console message and returns to
 Homebrew Menu when **+** is pressed. Replace or extend it as the first ideas
 take shape.
+
+## First planned feature: AlbumSigner
+
+The initial design for a native, offline AlbumSigner is in [ideas/01-albumsigner.md](ideas/01-albumsigner.md).
+It will prepare images and videos locally on the SD card, with installed-game selection,
+firmware-aware Album metadata, and a streaming video pipeline. The actual signer is not
+marked complete until its generated files pass real-device validation.

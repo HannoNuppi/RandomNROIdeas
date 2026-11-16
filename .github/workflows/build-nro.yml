@@ -37,6 +37,12 @@ jobs:
           "$compiler" --version
           test -f "${DEVKITPRO}/libnx/switch_rules"
 
+      - name: Install image codec dependencies
+        run: |
+          set -euo pipefail
+          pacman -Sy --noconfirm
+          pacman -S --noconfirm --needed switch-libjpeg-turbo switch-libpng
+
       - name: Compile NRO
         run: make -j"$(nproc)"
 

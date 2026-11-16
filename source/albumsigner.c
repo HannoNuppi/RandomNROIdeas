@@ -143,7 +143,7 @@ static bool browse_for_media(char *selected_path, size_t selected_path_size)
             }
 
             printf("\nA: open/select   B: parent   +: exit\n");
-            printf("Inputs: JPG, JPEG, PNG, MP4, MOV, M4V\n");
+            printf("Image inputs: JPG, JPEG, PNG. Video import is not implemented yet.\n");
         }
         consoleUpdate(NULL);
 
@@ -337,30 +337,30 @@ static void show_preview(const char *media_path, const InstalledTitle *title)
     const bool time_ok = get_current_local_time(&calendar, &timezone);
 
     consoleClear();
-    printf("AlbumSigner - Add image to Album\\n");
-    printf("================================\\n\\n");
-    printf("Image:\\n%s\\n\\n", media_path);
-    printf("Selected game:\\n%s\\n", title->name);
-    printf("Application Title ID: %016llX\\n\\n",
+    printf("AlbumSigner - Add image to Album\n");
+    printf("================================\n\n");
+    printf("Image:\n%s\n\n", media_path);
+    printf("Selected game:\n%s\n", title->name);
+    printf("Application Title ID: %016llX\n\n",
            (unsigned long long)title->application_id);
 
     if (time_ok) {
-        printf("The Switch will timestamp the new Album entry\\n");
-        printf("using its current local clock:\\n");
-        printf("%04u-%02u-%02u %02u:%02u:%02u\\n",
+        printf("The Switch will timestamp the new Album entry\n");
+        printf("using its current local clock:\n");
+        printf("%04u-%02u-%02u %02u:%02u:%02u\n",
                calendar.year, calendar.month, calendar.day,
                calendar.hour, calendar.minute, calendar.second);
-        printf("Timezone: %.*s (UTC offset %d seconds)\\n\\n",
+        printf("Timezone: %.*s (UTC offset %d seconds)\n\n",
                (int)sizeof(timezone.timezoneName),
                timezone.timezoneName, timezone.offset);
     } else {
-        printf("Could not read the console's local time.\\n\\n");
+        printf("Could not read the console's local time.\n\n");
     }
 
-    printf("The system Album service will convert and save\\n");
-    printf("the image as a genuine Switch screenshot entry.\\n");
-    printf("The original file will remain unchanged.\\n\\n");
-    printf("A: Add to Album   B: choose another image   +: exit\\n");
+    printf("The system Album service will convert and save\n");
+    printf("the image as a genuine Switch screenshot entry.\n");
+    printf("The original file will remain unchanged.\n\n");
+    printf("A: Add to Album   B: choose another image   +: exit\n");
     consoleUpdate(NULL);
 }
 
@@ -463,21 +463,21 @@ static void show_save_result(const InstalledTitle *title,
     const bool time_ok = get_current_local_time(&calendar, &timezone);
 
     consoleClear();
-    printf("AlbumSigner - Save result\\n");
-    printf("=========================\\n\\n");
-    printf("%s\\n\\n", succeeded ? "SYSTEM ACCEPTED THE IMAGE" : "IMAGE WAS NOT SAVED");
-    printf("%s\\n\\n", message);
-    printf("Selected game: %s\\n", title->name);
-    printf("Title ID: %016llX\\n",
+    printf("AlbumSigner - Save result\n");
+    printf("=========================\n\n");
+    printf("%s\n\n", succeeded ? "SYSTEM ACCEPTED THE IMAGE" : "IMAGE WAS NOT SAVED");
+    printf("%s\n\n", message);
+    printf("Selected game: %s\n", title->name);
+    printf("Title ID: %016llX\n",
            (unsigned long long)title->application_id);
 
     if (time_ok) {
-        printf("Current local time: %04u-%02u-%02u %02u:%02u:%02u\\n",
+        printf("Current local time: %04u-%02u-%02u %02u:%02u:%02u\n",
                calendar.year, calendar.month, calendar.day,
                calendar.hour, calendar.minute, calendar.second);
     }
 
-    printf("\\nB: choose another image   +: exit\\n");
+    printf("\nB: choose another image   +: exit\n");
     consoleUpdate(NULL);
 }
 

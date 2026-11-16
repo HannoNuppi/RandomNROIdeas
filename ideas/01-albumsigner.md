@@ -4,7 +4,7 @@
 
 Build a fully native, offline Nintendo Switch homebrew application that places selected images and videos into the Switch Album as entries attributed to a user-selected installed game, with the current console date/time.
 
-The NRO reads media directly from the SD card, prepares the Album-specific metadata locally, and writes the resulting file into the appropriate Album directory. There is no website, upload, account, or remote signing API.
+The NRO reads media directly from the SD card and processes it offline. The image prototype uses the Switch system's screenshot-saving service. Video support is being developed as a separate pipeline: the current step inspects MP4 structure and codec metadata, while the Album movie writer (thumbnail, MakerNote, CMAC, and chunk hashes) remains future work. There is no website, upload, account, or remote signing API in the intended runtime.
 
 The intended result is an Album entry that the stock Album viewer can display and play on a compatible target console, including an unmodified console. Compatibility must be verified for each target platform/format generation before it is advertised.
 
@@ -55,7 +55,7 @@ libnx API reference: `https://switchbrew.github.io/libnx/ns_8h.html`.
 
 ### Images
 
-- Implemented first pass: decode JPEG and PNG locally with devkitPro's JPEG/PNG libraries.
+- Implemented first pass: decode JPEG and PNG locally with the pinned `stb_image` decoder.
 - Fit the decoded pixels to an opaque 1280x720 RGBA buffer, preserving the aspect ratio.
 - Use libnx `capssuSaveScreenShot()` (the Switch `caps:su` system service) to save the RGBA buffer as a system-generated Album screenshot.
 - Request the selected installed game's screenshot identity with `appletSetScreenShotAppletIdentityInfo()`.
@@ -67,10 +67,12 @@ The earlier raw-file signing path (manual EXIF/MakerNote/MAC writing) is therefo
 
 ### Videos
 
-- Initial input target: MP4; additional containers only when a reliable local demux/decode path is available.
-- Produce a Switch Album-compatible MP4 stream. The existing Flexlion page describes 720p H.264 output, which is a useful initial compatibility target, not proof that every codec/profile is accepted.
-- Generate the JPEG preview/thumbnail and required video MakerNote.
+- Implemented first step: inspect MP4 ISO BMFF boxes and the first video/audio sample descriptions without decoding or modifying the file. The probe reports container structure, H.264/HEVC/AV1/MPEG-4 Visual codec, dimensions, AAC/other audio, duration, fragmented layout, and moov-before-mdat layout.
+- Initial preflight candidate: non-fragmented H.264/AVC at exactly 1280x720, with AAC audio or no audio. This is a conservative input target, not proof of Album acceptance.
+- Video transcoding/remuxing is not implemented. The NRO must not label a passing MP4 as Album-ready until the full metadata and authentication pipeline exists.
+- Generate or extract a JPEG preview/thumbnail using a verified local decode path.
 - Generate encrypted movie metadata and the per-chunk SHA-256 hash table. The documented chunk size is `0x40000` (256 KiB).
+- Add the movie CMAC using the platform's supported system crypto interface, once the exact Switch 1 and Switch 2 call paths and metadata layout are validated.
 - Stream video data and hashes in bounded chunks.
 - Validate the MP4 structure, metadata lengths, thumbnail, hash-table coverage, and output size.
 

@@ -55,12 +55,15 @@ libnx API reference: `https://switchbrew.github.io/libnx/ns_8h.html`.
 
 ### Images
 
-- Initial inputs: JPEG and PNG; add other decoders only when available and tested.
-- Produce a JPEG profile and dimensions accepted by the target Album implementation.
-- Write the correct EXIF timestamp and Nintendo MakerNote fields.
-- Calculate the target generation's Album MAC, and verify the final structure before committing the output.
+- Implemented first pass: decode JPEG and PNG locally with devkitPro's JPEG/PNG libraries.
+- Fit the decoded pixels to an opaque 1280x720 RGBA buffer, preserving the aspect ratio.
+- Use libnx `capssuSaveScreenShot()` (the Switch `caps:su` system service) to save the RGBA buffer as a system-generated Album screenshot.
+- Request the selected installed game's screenshot identity with `appletSetScreenShotAppletIdentityInfo()`.
+- Let the Switch system service create its own EXIF/MakerNote and Album authentication. The NRO does not embed, extract, or store Nintendo's private keys.
 
-The documented screenshot validation changed across system generations: older firmware used HMAC-SHA256, while newer Switch 1 firmware calculates SHA-256 and uses SPL AES-CMAC. Do not hardcode guessed MAC bytes or mark an output successful if the system crypto operation fails.
+The native `caps:su` screenshot-saving API is documented from system version 4.0.0 onward and expects a 1280x720 RGBA8 image buffer. Selected-game attribution still requires validation on real hardware; a successful service call and CI build do not guarantee that every system version displays the requested attribution.
+
+The earlier raw-file signing path (manual EXIF/MakerNote/MAC writing) is therefore not the first implementation path. Prefer the official system save service where available; only investigate direct file generation for platform versions where no supported API exists.
 
 ### Videos
 

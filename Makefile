@@ -101,7 +101,8 @@ endif
 $(STB_IMAGE_HEADER):
 	@bash $(TOPDIR)/scripts/fetch-stb-image.sh
 	@test -s $@
-\n.PHONY: all clean
+
+.PHONY: all clean
 all: $(BUILD)
 
 $(BUILD): $(STB_IMAGE_HEADER)

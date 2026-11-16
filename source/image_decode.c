@@ -1,10 +1,10 @@
 #include "image_decode.h"
 
+#include <stdio.h>
 #include <jpeglib.h>
 #include <png.h>
 
 #include <setjmp.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -84,8 +84,13 @@ static bool decode_jpeg(const char *path,
     decoder_created = true;
     jpeg_stdio_src(&decoder, file);
 
-    if (jpeg_read_header(&decoder, TRUE) != JPEG_HEADER_OK)
-        ERREXIT(&decoder, JERR_NO_IMAGE);
+    if (jpeg_read_header(&decoder, TRUE) != JPEG_HEADER_OK) {
+        jpeg_destroy_decompress(&decoder);
+        decoder_created = false;
+        fclose(file);
+        set_error(error, error_size, "JPEG header is invalid.");
+        return false;
+    }
 
     decoder.out_color_space = JCS_RGB;
     jpeg_start_decompress(&decoder);
@@ -102,15 +107,33 @@ static bool decode_jpeg(const char *path,
     const size_t pixel_count = (size_t)width * height;
     pixels = malloc(pixel_count * 4);
     row = malloc((size_t)width * 3);
-    if (pixels == NULL || row == NULL)
-        ERREXIT(&decoder, JERR_OUT_OF_MEMORY);
+    if (pixels == NULL || row == NULL) {
+        free((void *)pixels);
+        free((void *)row);
+        pixels = NULL;
+        row = NULL;
+        jpeg_destroy_decompress(&decoder);
+        decoder_created = false;
+        fclose(file);
+        set_error(error, error_size, "Not enough memory to decode JPEG.");
+        return false;
+    }
 
     while (decoder.output_scanline < decoder.output_height) {
         JSAMPROW rows[1];
         rows[0] = (JSAMPROW)row;
 
-        if (jpeg_read_scanlines(&decoder, rows, 1) != 1)
-            ERREXIT(&decoder, JERR_CANT_SUSPEND);
+        if (jpeg_read_scanlines(&decoder, rows, 1) != 1) {
+            free((void *)pixels);
+            free((void *)row);
+            pixels = NULL;
+            row = NULL;
+            jpeg_destroy_decompress(&decoder);
+            decoder_created = false;
+            fclose(file);
+            set_error(error, error_size, "JPEG decoder stopped before the image was complete.");
+            return false;
+        }
 
         const size_t y = decoder.output_scanline - 1;
         const uint8_t *rgb = (const uint8_t *)row;
@@ -166,12 +189,12 @@ static bool decode_png(const char *path,
         return false;
     }
 
-    uint8_t *pixels = NULL;
-    png_bytep *rows = NULL;
+    uint8_t * volatile pixels = NULL;
+    png_bytep * volatile rows = NULL;
 
     if (setjmp(png_jmpbuf(png))) {
-        free(rows);
-        free(pixels);
+        free((void *)rows);
+        free((void *)pixels);
         png_destroy_read_struct(&png, &info, NULL);
         fclose(file);
         set_error(error, error_size, "PNG decoding failed or the file is invalid.");
@@ -236,10 +259,10 @@ static bool decode_png(const char *path,
     png_read_end(png, info);
 
     png_destroy_read_struct(&png, &info, NULL);
-    free(rows);
+    free((void *)rows);
     fclose(file);
 
-    *out_pixels = pixels;
+    *out_pixels = (uint8_t *)pixels;
     *out_width = (unsigned)width;
     *out_height = (unsigned)height;
     return true;

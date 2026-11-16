@@ -14,7 +14,7 @@
 #define MAX_FILES        128
 #define VISIBLE_ROWS     16
 #define PATH_BUFFER_SIZE 512
-#define NAME_BUFFER_SIZE 128
+#define NAME_BUFFER_SIZE 256
 
 typedef struct {
     u64 application_id;
@@ -179,7 +179,10 @@ static bool browse_for_media(char *selected_path, size_t selected_path_size)
                 }
 
                 if (entries[selection].is_directory) {
-                    snprintf(current_path, sizeof(current_path), "%s", next_path);
+                    if (strcmp(entries[selection].name, "..") == 0)
+                        parent_directory(current_path);
+                    else
+                        snprintf(current_path, sizeof(current_path), "%s", next_path);
                     selection = 0;
                 } else {
                     snprintf(selected_path, selected_path_size, "%s", next_path);

@@ -4,26 +4,21 @@ A collection of Nintendo Switch homebrew experiments. The repository currently b
 
 ## Build, tests, and releases
 
-Every push to `main` runs the Switch compiler and a CI smoke test. The test job checks that:
+Every push to `main` runs the Switch compiler and a CI smoke test. The test job checks that the ELF is an AArch64 executable, the NRO exists, and the NRO header contains the expected `NRO0` magic.
 
-- the ELF is an AArch64 executable;
-- the NRO file exists and is non-empty;
-- the NRO header contains the expected `NRO0` magic.
+Only after the entire test job succeeds, GitHub Actions publishes a **GitHub prerelease** with every `.nro` found in the build output. Each release gets a unique `build-<run>-<attempt>` tag. Pull requests are build-tested but do not publish releases.
 
-Only after that entire job succeeds, GitHub Actions publishes a **GitHub prerelease** with every `.nro` found in the build output. Each release gets a unique `build-<run>-<attempt>` tag, so previous test builds remain available.
-
-Pull requests are build-tested and have an Actions artifact, but they do **not** publish a release. Manually dispatched runs publish only when run against `main`.
+The workflow installs devkitPro's JPEG and PNG codec portlibs before compiling.
 
 - [Latest build](https://github.com/HannoNuppi/RandomNROIdeas/actions/workflows/build-nro.yml)
 - [All GitHub releases](https://github.com/HannoNuppi/RandomNROIdeas/releases)
 
-The Actions artifact is retained for 14 days. GitHub prereleases remain available until deleted.
-
 ## Local build
 
-Install the devkitPro Switch development packages (`switch-dev`), open the devkitPro MSYS2 shell, then run:
+Install the devkitPro Switch development packages (`switch-dev`) and the image codec libraries in devkitPro MSYS2:
 
 ```sh
+pacman -S --needed switch-libjpeg-turbo switch-libpng
 make
 ```
 
@@ -33,19 +28,25 @@ The output is `RandomNROIdeas.nro` in the repository root.
 
 - `.github/workflows/build-nro.yml` — compile, smoke-test, upload artifacts, and publish prereleases
 - `source/main.c` — application entry point
-- `source/albumsigner.c` / `source/albumsigner.h` — AlbumSigner prototype
+- `source/albumsigner.c` — native AlbumSigner application and UI
+- `source/image_decode.c` — JPEG/PNG decoding and 1280x720 RGBA conversion
 - `ideas/01-albumsigner.md` — AlbumSigner requirements and implementation plan
-- `Makefile` — devkitPro/libnx build configuration
 
-## AlbumSigner prototype status
+## AlbumSigner status
 
-The current prototype:
+**Implemented in the current prototype:**
+- Require Application mode.
+- Browse the SD card for JPEG and PNG images.
+- Enumerate installed games and display their names and Title IDs.
+- Read the current local console time.
+- Convert an image locally to 1280x720 RGBA.
+- Request a real Album screenshot save through the Switch system's `caps:su` service, with the selected application identity.
 
-1. Requires **Application mode** and exits with a clear message when launched as an applet.
-2. Mounts the SD card and browses folders for JPG, JPEG, PNG, MP4, MOV, and M4V files.
-3. Enumerates installed applications and displays each game's name and application Title ID.
-4. Reads the console's current local date/time and previews the destination date folder under `Nintendo/Album/YYYY/MM/DD/`.
+The original image remains untouched. The NRO does not extract or embed Nintendo's private Album keys; the system service produces the authenticated Album entry.
 
-**Important:** this is currently a selection and metadata preview prototype. It does not create or sign Album files yet. The original media remains untouched. Image EXIF/MakerNote authentication and video metadata/hash generation are separate implementation milestones and must be validated on hardware before the UI can claim a file was added successfully.
+**Not yet implemented or verified:**
+- Real-console confirmation that selected-game attribution is accepted on all supported Switch 1 firmware.
+- Switch 2 compatibility testing.
+- Album video conversion, movie MakerNote generation, and chunk-hash generation.
 
-The NRO is intended to run offline. It uses the Switch's local services and SD storage; no upload endpoint or external signing service is part of the design.
+A successful CI build verifies compilation and NRO structure only. It does not replace real-device Album testing.

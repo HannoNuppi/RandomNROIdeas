@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 #include "albumsigner.h"
+#include "image_decode.h"
 
 #define MAX_TITLES       128
 #define MAX_FILES        128
@@ -34,10 +35,7 @@ static bool has_supported_extension(const char *name)
 
     return strcasecmp(dot, ".jpg") == 0 ||
            strcasecmp(dot, ".jpeg") == 0 ||
-           strcasecmp(dot, ".png") == 0 ||
-           strcasecmp(dot, ".mp4") == 0 ||
-           strcasecmp(dot, ".mov") == 0 ||
-           strcasecmp(dot, ".m4v") == 0;
+           strcasecmp(dot, ".png") == 0;
 }
 
 static bool join_path(char *out, size_t out_size, const char *base, const char *name)
@@ -339,31 +337,147 @@ static void show_preview(const char *media_path, const InstalledTitle *title)
     const bool time_ok = get_current_local_time(&calendar, &timezone);
 
     consoleClear();
-    printf("AlbumSigner - Preview\n");
-    printf("=====================\n\n");
-    printf("Selected media:\n%s\n\n", media_path);
-    printf("Selected game:\n%s\n", title->name);
-    printf("Application Title ID: %016llX\n\n",
+    printf("AlbumSigner - Add image to Album\\n");
+    printf("================================\\n\\n");
+    printf("Image:\\n%s\\n\\n", media_path);
+    printf("Selected game:\\n%s\\n", title->name);
+    printf("Application Title ID: %016llX\\n\\n",
            (unsigned long long)title->application_id);
 
     if (time_ok) {
-        printf("Capture time (console local time):\n");
-        printf("%04u-%02u-%02u %02u:%02u:%02u\n",
+        printf("The Switch will timestamp the new Album entry\\n");
+        printf("using its current local clock:\\n");
+        printf("%04u-%02u-%02u %02u:%02u:%02u\\n",
                calendar.year, calendar.month, calendar.day,
                calendar.hour, calendar.minute, calendar.second);
-        printf("Timezone: %s (UTC offset %d seconds)\n\n",
+        printf("Timezone: %.*s (UTC offset %d seconds)\\n\\n",
+               (int)sizeof(timezone.timezoneName),
                timezone.timezoneName, timezone.offset);
-        printf("Planned Album folder:\n");
-        printf("sdmc:/Nintendo/Album/%04u/%02u/%02u/\n\n",
-               calendar.year, calendar.month, calendar.day);
     } else {
-        printf("Could not read the console's local time.\n\n");
+        printf("Could not read the console's local time.\\n\\n");
     }
 
-    printf("STATUS: Selection preview only.\n");
-    printf("No file has been created or changed.\n");
-    printf("Album metadata and authentication are not implemented yet.\n\n");
-    printf("B: choose another file   +: exit\n");
+    printf("The system Album service will convert and save\\n");
+    printf("the image as a genuine Switch screenshot entry.\\n");
+    printf("The original file will remain unchanged.\\n\\n");
+    printf("A: Add to Album   B: choose another image   +: exit\\n");
+    consoleUpdate(NULL);
+}
+
+static bool save_image_to_album(const char *media_path,
+                                const InstalledTitle *title,
+                                char *message,
+                                size_t message_size)
+{
+    uint8_t *source_pixels = NULL;
+    uint8_t *album_pixels = NULL;
+    unsigned source_width = 0;
+    unsigned source_height = 0;
+    char decode_error[192] = {0};
+
+    if (!hosversionAtLeast(4, 0, 0)) {
+        snprintf(message, message_size,
+                 "Album image saving requires system version 4.0.0 or newer.");
+        return false;
+    }
+
+    if (!image_decode_to_rgba(media_path, &source_pixels,
+                              &source_width, &source_height,
+                              decode_error, sizeof(decode_error))) {
+        snprintf(message, message_size, "Image decode failed: %s", decode_error);
+        return false;
+    }
+
+    if (!image_fit_to_album_rgba(source_pixels, source_width, source_height,
+                                 &album_pixels, decode_error, sizeof(decode_error))) {
+        free(source_pixels);
+        snprintf(message, message_size, "Image conversion failed: %s", decode_error);
+        return false;
+    }
+
+    free(source_pixels);
+    source_pixels = NULL;
+
+    AppletIdentityInfo identity;
+    memset(&identity, 0, sizeof(identity));
+    identity.appletId = AppletId_application;
+    identity.application_id = title->application_id;
+
+    Result rc = appletSetScreenShotPermission(AppletScreenShotPermission_Enable);
+    if (R_FAILED(rc)) {
+        free(album_pixels);
+        snprintf(message, message_size,
+                 "Could not enable screenshot saving (0x%08X).", rc);
+        return false;
+    }
+
+    rc = appletSetScreenShotAppletIdentityInfo(&identity);
+    if (R_FAILED(rc)) {
+        free(album_pixels);
+        snprintf(message, message_size,
+                 "Could not set the selected game's Album identity (0x%08X).", rc);
+        return false;
+    }
+
+    rc = capssuInitialize();
+    if (R_FAILED(rc)) {
+        free(album_pixels);
+        snprintf(message, message_size,
+                 "Could not initialize the Switch Album service (0x%08X).", rc);
+        return false;
+    }
+
+    CapsApplicationAlbumEntry entry;
+    memset(&entry, 0, sizeof(entry));
+
+    rc = capssuSaveScreenShot(
+        album_pixels,
+        ALBUM_IMAGE_RGBA_SIZE,
+        AlbumReportOption_Disable,
+        AlbumImageOrientation_Unknown0,
+        &entry
+    );
+
+    capssuExit();
+    free(album_pixels);
+
+    if (R_FAILED(rc)) {
+        snprintf(message, message_size,
+                 "The Switch Album service rejected the image (0x%08X).", rc);
+        return false;
+    }
+
+    snprintf(message, message_size,
+             "The Switch Album service accepted the image (%ux%u -> %ux%u). "
+             "Open Album to verify the entry and selected-game attribution.",
+             source_width, source_height, ALBUM_IMAGE_WIDTH, ALBUM_IMAGE_HEIGHT);
+    return true;
+}
+
+static void show_save_result(const InstalledTitle *title,
+                             bool succeeded,
+                             const char *message)
+{
+    TimeCalendarTime calendar = {0};
+    TimeCalendarAdditionalInfo timezone = {0};
+    const bool time_ok = get_current_local_time(&calendar, &timezone);
+
+    consoleClear();
+    printf("AlbumSigner - Save result\\n");
+    printf("=========================\\n\\n");
+    printf("%s\\n\\n", succeeded ? "SYSTEM ACCEPTED THE IMAGE" : "IMAGE WAS NOT SAVED");
+    printf("%s\\n\\n", message);
+    printf("Selected game: %s\\n", title->name);
+    printf("Title ID: %016llX\\n",
+           (unsigned long long)title->application_id);
+
+    if (time_ok) {
+        printf("Current local time: %04u-%02u-%02u %02u:%02u:%02u\\n",
+               calendar.year, calendar.month, calendar.day,
+               calendar.hour, calendar.minute, calendar.second);
+    }
+
+    printf("\\nB: choose another image   +: exit\\n");
     consoleUpdate(NULL);
 }
 
@@ -448,6 +562,7 @@ int albumsigner_run(void)
         PadState pad;
         padInitializeDefault(&pad);
         bool choose_another = false;
+        bool add_to_album = false;
 
         while (appletMainLoop()) {
             padUpdate(&pad);
@@ -459,7 +574,32 @@ int albumsigner_run(void)
                 choose_another = true;
                 break;
             }
+            if (down & HidNpadButton_A) {
+                add_to_album = true;
+                break;
+            }
             consoleUpdate(NULL);
+        }
+
+        if (add_to_album) {
+            char result_message[384] = {0};
+            const bool saved = save_image_to_album(
+                media_path, &titles[selected_title],
+                result_message, sizeof(result_message)
+            );
+            show_save_result(&titles[selected_title], saved, result_message);
+
+            bool leave_result = false;
+            while (appletMainLoop() && !leave_result) {
+                padUpdate(&pad);
+                const u64 down = padGetButtonsDown(&pad);
+                if (down & HidNpadButton_Plus)
+                    goto cleanup;
+                if (down & HidNpadButton_B)
+                    leave_result = true;
+                consoleUpdate(NULL);
+            }
+            choose_another = leave_result;
         }
 
         if (!choose_another)

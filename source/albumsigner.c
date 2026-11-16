@@ -246,7 +246,8 @@ static int load_installed_titles(InstalledTitle *titles, int capacity, Result *o
             rc = nsGetApplicationDesiredLanguage(&control->nacp, &language_entry);
             if (R_SUCCEEDED(rc) && language_entry != NULL && language_entry->name[0] != '\0') {
                 snprintf(titles[title_count].name, sizeof(titles[title_count].name),
-                         "%s", language_entry->name);
+                         "%.*s", (int)sizeof(titles[title_count].name) - 1,
+                         language_entry->name);
             } else {
                 snprintf(titles[title_count].name, sizeof(titles[title_count].name),
                          "Unknown title");

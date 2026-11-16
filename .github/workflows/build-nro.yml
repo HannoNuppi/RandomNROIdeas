@@ -86,9 +86,14 @@ jobs:
         run: |
           set -euo pipefail
           cc -std=c11 -Wall -Wextra -Werror \
-            -Isource source/video_probe.c tests/test_video_probe.c \
+            -Isource -Itests source/video_probe.c tests/test_video_probe.c \
             -o video-probe-tests
           ./video-probe-tests
+
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Isource -Itests source/video_probe.c source/album_video_writer.c \
+            tests/test_album_video_writer.c -o album-video-writer-tests
+          ./album-video-writer-tests
 
   publish-release:
     name: Publish release after successful test build
@@ -126,5 +131,7 @@ jobs:
             This is a CI test build. Hardware functionality is not implied by a successful compilation.
           prerelease: true
           draft: false
-          files: dist/*.nro dist/THIRD_PARTY_NOTICES.md
+          files: |
+            dist/*.nro
+            dist/THIRD_PARTY_NOTICES.md
           fail_on_unmatched_files: true

@@ -1,25 +1,36 @@
-# AlbumSigner implementation
+# AlbumSigner image implementation
 
-The first native prototype is implemented in `../albumsigner.c`.
+The initial image-import path is implemented in `../albumsigner.c` and `../image_decode.c`.
 
-## Currently implemented
+## Current behavior
 
-- Require `AppletType_Application`; applet-mode launches are rejected.
-- Mount the SD card with libnx's `fsdevMountSdmc()`.
-- Browse folders and select JPG, JPEG, PNG, MP4, MOV, and M4V media.
-- Query installed application records with NS services.
-- Read localized application names and show the 64-bit application Title ID.
-- Read the console's current user-system clock and convert it to the configured local timezone.
-- Preview the date-based Album destination folder without writing any files.
+1. Requires Application mode; applet-mode launches are rejected.
+2. Mounts the SD card and browses for JPEG or PNG images.
+3. Enumerates installed titles and reads their localized display names and application Title IDs.
+4. Shows the selected image, selected game, and current console-local time.
+5. On user confirmation, decodes the input image locally and fits it into an opaque 1280x720 RGBA canvas, preserving the aspect ratio with black bars where necessary.
+6. Sets the screenshot identity to the selected installed application and calls libnx's `capssuSaveScreenShot()` system service.
+7. The Switch system service creates the Album screenshot entry and generates its own Album metadata/authentication. The original file is not modified.
 
-## Not implemented yet
+## Dependencies
 
-- Album-specific Title ID mapping.
-- JPEG re-encoding and EXIF/MakerNote writing.
-- Screenshot MAC generation.
-- MP4 conversion, preview generation, encrypted movie metadata, and per-chunk hashes.
-- Final collision-safe Album file creation.
+- libnx from devkitPro
+- `switch-libjpeg-turbo`
+- `switch-libpng` (which depends on `switch-zlib`)
 
-The prototype intentionally leaves all input files unchanged and clearly labels its last screen as a preview. A successful CI build proves only that the NRO compiles and its file header passes the smoke checks; it does not prove compatibility with the console's Album viewer.
+GitHub Actions installs these codec packages before compiling. For local builds, install them in the devkitPro MSYS2 shell:
+
+```sh
+pacman -S --needed switch-libjpeg-turbo switch-libpng
+make
+```
+
+## Important compatibility notes
+
+- The native Album save service `caps:su` is supported on system version 4.0.0 and newer.
+- The capture API accepts a 1280x720 RGBA8 buffer. The NRO decodes JPEG/PNG inputs locally and resizes them before handing them to the service.
+- The selected-game attribution is requested through `appletSetScreenShotAppletIdentityInfo()`. This must still be verified on a real Switch; successful compilation alone does not prove the Album will attribute the entry to the chosen game.
+- This phase only supports still images. Video conversion and Album movie metadata are not implemented.
+- The app does not extract or store Nintendo's private screenshot keys. The official system service handles the Album authentication.
 
 See [the full design](../../ideas/01-albumsigner.md).

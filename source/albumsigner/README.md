@@ -15,15 +15,9 @@ The initial image-import path is implemented in `../albumsigner.c` and `../image
 ## Dependencies
 
 - libnx from devkitPro
-- `switch-libjpeg-turbo`
-- `switch-libpng` (which depends on `switch-zlib`)
+- `stb_image.h` from the pinned `nothings/stb` commit. The Makefile downloads it on the first build and caches it locally; the built NRO has no runtime network dependency.
 
-GitHub Actions installs these codec packages before compiling. For local builds, install them in the devkitPro MSYS2 shell:
-
-```sh
-pacman -S --needed switch-libjpeg-turbo switch-libpng
-make
-```
+Run `make` in the devkitPro MSYS2 shell. A first build requires internet access only to fetch this pinned header.
 
 ## Important compatibility notes
 

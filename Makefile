@@ -7,6 +7,7 @@ $(error "Please set DEVKITPRO in your environment. See the README.")
 endif
 
 TOPDIR ?= $(CURDIR)
+STB_IMAGE_HEADER := $(TOPDIR)/third_party/stb/stb_image.h
 include $(DEVKITPRO)/libnx/switch_rules
 
 #---------------------------------------------------------------------------------
@@ -16,7 +17,7 @@ TARGET      := RandomNROIdeas
 BUILD       := build
 SOURCES     := source
 DATA        := data
-INCLUDES    := include
+INCLUDES    := include third_party/stb
 
 APP_TITLE   := Random NRO Ideas
 APP_AUTHOR  := HannoNuppi
@@ -33,7 +34,7 @@ CXXFLAGS := $(CFLAGS) -fno-rtti -fno-exceptions
 ASFLAGS  := -g $(ARCH)
 LDFLAGS  = -specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBS    := -lnx -lpng -ljpeg -lz
+LIBS    := -lnx
 LIBDIRS := $(PORTLIBS) $(LIBNX)
 
 #---------------------------------------------------------------------------------
@@ -96,10 +97,14 @@ ifneq ($(strip $(ROMFS)),)
   export NROFLAGS += --romfsdir=$(CURDIR)/$(ROMFS)
 endif
 
-.PHONY: all clean
+
+$(STB_IMAGE_HEADER):
+	@bash $(TOPDIR)/scripts/fetch-stb-image.sh
+	@test -s $@
+\n.PHONY: all clean
 all: $(BUILD)
 
-$(BUILD):
+$(BUILD): $(STB_IMAGE_HEADER)
 	@mkdir -p $@
 	@$(MAKE) --no-print-directory -C $@ -f $(CURDIR)/Makefile
 
@@ -113,6 +118,7 @@ else
 DEPENDS := $(OFILES:.o=.d)
 
 all: $(OUTPUT).nro
+$(OUTPUT).nro: $(STB_IMAGE_HEADER)
 
 ifeq ($(strip $(NO_NACP)),)
 $(OUTPUT).nro: $(OUTPUT).elf $(OUTPUT).nacp

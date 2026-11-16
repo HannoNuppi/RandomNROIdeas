@@ -1,22 +1,25 @@
-# AlbumSigner implementation area
+# AlbumSigner implementation
 
-AlbumSigner is designed as an offline, Application-mode NRO. It must refuse to process media when launched as an applet.
+The first native prototype is implemented in `../albumsigner.c`.
 
-## Planned modules
+## Currently implemented
 
-- `app_mode.c` — check `appletGetAppletType() == AppletType_Application` and display a clear launch-mode error otherwise.
-- `title_catalog.c` — enumerate installed games via NS services and read each localized title/icon.
-- `file_browser.c` — browse SD files without loading large media fully into memory.
-- `album_clock.c` — obtain the current local console timestamp.
-- `image_pipeline.c` — image decode/resize and Album JPEG/EXIF/MakerNote output.
-- `video_pipeline.c` — MP4 input, thumbnail, encrypted video metadata, and streaming chunk hashes.
-- `album_crypto.c` — firmware/platform-specific crypto backends using supported system services; no embedded private key material.
-- `output_writer.c` — temporary output, validation, collision-safe naming, and commit to `Nintendo/Album/YYYY/MM/DD/`.
+- Require `AppletType_Application`; applet-mode launches are rejected.
+- Mount the SD card with libnx's `fsdevMountSdmc()`.
+- Browse folders and select JPG, JPEG, PNG, MP4, MOV, and M4V media.
+- Query installed application records with NS services.
+- Read localized application names and show the 64-bit application Title ID.
+- Read the console's current user-system clock and convert it to the configured local timezone.
+- Preview the date-based Album destination folder without writing any files.
 
-## User flow
+## Not implemented yet
 
-Select an SD media file → select an installed game → use the current console time → add a new Album entry. The original file remains untouched, and the process is fully offline.
+- Album-specific Title ID mapping.
+- JPEG re-encoding and EXIF/MakerNote writing.
+- Screenshot MAC generation.
+- MP4 conversion, preview generation, encrypted movie metadata, and per-chunk hashes.
+- Final collision-safe Album file creation.
 
-The first milestone is the Application-mode shell, SD browser, title picker, clock, and dry-run output path. It should not claim to sign files until the image/video format and authentication implementation are validated on real hardware.
+The prototype intentionally leaves all input files unchanged and clearly labels its last screen as a preview. A successful CI build proves only that the NRO compiles and its file header passes the smoke checks; it does not prove compatibility with the console's Album viewer.
 
-See [the full design](../../ideas/01-albumsigner.md) for requirements and compatibility milestones.
+See [the full design](../../ideas/01-albumsigner.md).

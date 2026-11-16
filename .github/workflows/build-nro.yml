@@ -1,0 +1,46 @@
+name: Build Switch NRO
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Compile NRO
+    runs-on: ubuntu-latest
+    container:
+      # Official devkitPro image with devkitA64 and the Switch development SDK.
+      image: devkitpro/devkita64:latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Verify Switch toolchain
+        run: |
+          set -euo pipefail
+          : "${DEVKITPRO:?DEVKITPRO is not set in the build image}"
+          command -v aarch64-none-elf-gcc
+          test -f "${DEVKITPRO}/libnx/switch_rules"
+
+      - name: Build NRO
+        run: make -j"$(nproc)"
+
+      - name: Verify output
+        run: test -s RandomNROIdeas.nro
+
+      - name: Upload NRO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RandomNROIdeas-${{ github.sha }}
+          path: RandomNROIdeas.nro
+          if-no-files-found: error
+          retention-days: 14

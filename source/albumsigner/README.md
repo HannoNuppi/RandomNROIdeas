@@ -1,14 +1,22 @@
 # AlbumSigner implementation area
 
-The planned native implementation will be split into small components:
+AlbumSigner is designed as an offline, Application-mode NRO. It must refuse to process media when launched as an applet.
 
-- `title_catalog.c` — enumerate installed titles and read localized game names using libnx NS services.
-- `file_browser.c` — browse SD files without loading them fully into memory.
-- `image_pipeline.c` — decode/resize images and build Nintendo-compatible JPEG/EXIF output.
-- `video_pipeline.c` — MP4 processing, thumbnail creation, and streaming hash generation.
-- `album_crypto.c` — firmware-aware MAC and movie metadata operations; no embedded secret material.
-- `output_writer.c` — collision-safe timestamp naming and atomic staging/final writes.
+## Planned modules
 
-The feature is intentionally not wired into the main menu yet: the cryptographic format and Switch 2 compatibility need verified test fixtures before a UI can safely claim to produce valid Album files.
+- `app_mode.c` — check `appletGetAppletType() == AppletType_Application` and display a clear launch-mode error otherwise.
+- `title_catalog.c` — enumerate installed games via NS services and read each localized title/icon.
+- `file_browser.c` — browse SD files without loading large media fully into memory.
+- `album_clock.c` — obtain the current local console timestamp.
+- `image_pipeline.c` — image decode/resize and Album JPEG/EXIF/MakerNote output.
+- `video_pipeline.c` — MP4 input, thumbnail, encrypted video metadata, and streaming chunk hashes.
+- `album_crypto.c` — firmware/platform-specific crypto backends using supported system services; no embedded private key material.
+- `output_writer.c` — temporary output, validation, collision-safe naming, and commit to `Nintendo/Album/YYYY/MM/DD/`.
 
-See [the full design](../../ideas/01-albumsigner.md) for requirements and implementation milestones.
+## User flow
+
+Select an SD media file → select an installed game → use the current console time → add a new Album entry. The original file remains untouched, and the process is fully offline.
+
+The first milestone is the Application-mode shell, SD browser, title picker, clock, and dry-run output path. It should not claim to sign files until the image/video format and authentication implementation are validated on real hardware.
+
+See [the full design](../../ideas/01-albumsigner.md) for requirements and compatibility milestones.

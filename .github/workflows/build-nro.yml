@@ -37,11 +37,8 @@ jobs:
           "$compiler" --version
           test -f "${DEVKITPRO}/libnx/switch_rules"
 
-      - name: Install image codec dependencies
-        run: |
-          set -euo pipefail
-          pacman -Sy --noconfirm
-          pacman -S --noconfirm --needed switch-libjpeg-turbo switch-libpng
+      - name: Fetch pinned stb image decoder
+        run: bash scripts/fetch-stb-image.sh
 
       - name: Compile NRO
         run: make -j"$(nproc)"
@@ -73,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: RandomNROIdeas-${{ github.sha }}
-          path: dist/*.nro
+          path: dist/*
           if-no-files-found: error
           retention-days: 14
 
@@ -96,6 +93,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$(find dist -maxdepth 1 -type f -name '*.nro' -print -quit)"
+          test -s dist/THIRD_PARTY_NOTICES.md
           find dist -maxdepth 1 -type f -name '*.nro' -exec test -s '{}' \;
 
       - name: Publish prerelease with all NROs
@@ -112,5 +110,5 @@ jobs:
             This is a CI test build. Hardware functionality is not implied by a successful compilation.
           prerelease: true
           draft: false
-          files: dist/*.nro
+          files: dist/*.nro dist/THIRD_PARTY_NOTICES.md
           fail_on_unmatched_files: true

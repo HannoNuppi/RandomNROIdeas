@@ -15,11 +15,10 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Compile NRO
+  test-build:
+    name: Build and smoke-test NROs
     runs-on: ubuntu-latest
     container:
-      # Official devkitPro image with devkitA64 and the Switch development SDK.
       image: devkitpro/devkita64:latest
     defaults:
       run:
@@ -38,16 +37,74 @@ jobs:
           "$compiler" --version
           test -f "${DEVKITPRO}/libnx/switch_rules"
 
-      - name: Build NRO
+      - name: Compile NRO
         run: make -j"$(nproc)"
 
-      - name: Verify output
-        run: test -s RandomNROIdeas.nro
+      - name: Smoke-test ELF and NRO
+        run: |
+          set -euo pipefail
+          test -s RandomNROIdeas.elf
+          test -s RandomNROIdeas.nro
+          aarch64-none-elf-readelf -h RandomNROIdeas.elf | grep -q 'Machine:.*AArch64'
+          python3 - <<'PY'
+          from pathlib import Path
+          nro = Path("RandomNROIdeas.nro").read_bytes()
+          if len(nro) < 0x80:
+              raise SystemExit("NRO is smaller than the minimum header size")
+          if nro[0x10:0x14] != b"NRO0":
+              raise SystemExit("NRO0 magic header missing at offset 0x10")
+          print(f"NRO header OK ({len(nro):,} bytes)")
+          PY
 
-      - name: Upload NRO artifact
+      - name: Stage every NRO for artifact and release
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find . -maxdepth 3 -type f -name '*.nro' -not -path './dist/*' -print -exec cp '{}' dist/ \;
+          test -n "$(find dist -maxdepth 1 -type f -name '*.nro' -print -quit)"
+
+      - name: Upload tested NROs
         uses: actions/upload-artifact@v4
         with:
           name: RandomNROIdeas-${{ github.sha }}
-          path: RandomNROIdeas.nro
+          path: dist/*.nro
           if-no-files-found: error
           retention-days: 14
+
+  publish-release:
+    name: Publish release after successful test build
+    needs: test-build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download tested NROs
+        uses: actions/download-artifact@v4
+        with:
+          name: RandomNROIdeas-${{ github.sha }}
+          path: dist
+
+      - name: Verify downloaded release files
+        run: |
+          set -euo pipefail
+          test -n "$(find dist -maxdepth 1 -type f -name '*.nro' -print -quit)"
+          find dist -maxdepth 1 -type f -name '*.nro' -exec test -s '{}' \;
+
+      - name: Publish prerelease with all NROs
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}-${{ github.run_attempt }}
+          name: Test build ${{ github.run_number }} (attempt ${{ github.run_attempt }})
+          body: |
+            Automatically published after the **Build and smoke-test NROs** job completed successfully.
+
+            Commit: `${{ github.sha }}`
+            Branch: `${{ github.ref_name }}`
+
+            This is a CI test build. Hardware functionality is not implied by a successful compilation.
+          prerelease: true
+          draft: false
+          files: dist/*.nro
+          fail_on_unmatched_files: true

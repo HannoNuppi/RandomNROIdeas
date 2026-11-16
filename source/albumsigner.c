@@ -10,6 +10,7 @@
 
 #include "albumsigner.h"
 #include "image_decode.h"
+#include "video_probe.h"
 
 #define MAX_TITLES       128
 #define MAX_FILES        128
@@ -35,7 +36,14 @@ static bool has_supported_extension(const char *name)
 
     return strcasecmp(dot, ".jpg") == 0 ||
            strcasecmp(dot, ".jpeg") == 0 ||
-           strcasecmp(dot, ".png") == 0;
+           strcasecmp(dot, ".png") == 0 ||
+           strcasecmp(dot, ".mp4") == 0;
+}
+
+static bool is_mp4_path(const char *path)
+{
+    const char *dot = path != NULL ? strrchr(path, '.') : NULL;
+    return dot != NULL && strcasecmp(dot, ".mp4") == 0;
 }
 
 static bool join_path(char *out, size_t out_size, const char *base, const char *name)
@@ -143,7 +151,7 @@ static bool browse_for_media(char *selected_path, size_t selected_path_size)
             }
 
             printf("\nA: open/select   B: parent   +: exit\n");
-            printf("Image inputs: JPG, JPEG, PNG. Video import is not implemented yet.\n");
+            printf("Inputs: JPG/JPEG/PNG images; MP4 video inspection.\n");
         }
         consoleUpdate(NULL);
 
@@ -335,18 +343,21 @@ static void show_preview(const char *media_path, const InstalledTitle *title)
     TimeCalendarTime calendar = {0};
     TimeCalendarAdditionalInfo timezone = {0};
     const bool time_ok = get_current_local_time(&calendar, &timezone);
+    const bool is_video = is_mp4_path(media_path);
 
     consoleClear();
-    printf("AlbumSigner - Add image to Album\n");
+    printf("AlbumSigner - %s preflight\n", is_video ? "Video" : "Image");
     printf("================================\n\n");
-    printf("Image:\n%s\n\n", media_path);
+    printf("%s:\n%s\n\n", is_video ? "Video file" : "Image file", media_path);
     printf("Selected game:\n%s\n", title->name);
     printf("Application Title ID: %016llX\n\n",
            (unsigned long long)title->application_id);
 
     if (time_ok) {
-        printf("The Switch will timestamp the new Album entry\n");
-        printf("using its current local clock:\n");
+        printf("%s\n",
+               is_video
+                   ? "Current local console time (planned Album timestamp):"
+                   : "The Switch will timestamp the new Album entry using its local clock:");
         printf("%04u-%02u-%02u %02u:%02u:%02u\n",
                calendar.year, calendar.month, calendar.day,
                calendar.hour, calendar.minute, calendar.second);
@@ -357,10 +368,48 @@ static void show_preview(const char *media_path, const InstalledTitle *title)
         printf("Could not read the console's local time.\n\n");
     }
 
-    printf("The system Album service will convert and save\n");
-    printf("the image as a genuine Switch screenshot entry.\n");
-    printf("The original file will remain unchanged.\n\n");
-    printf("A: Add to Album   B: choose another image   +: exit\n");
+    if (is_video) {
+        Mp4Info info;
+        char probe_error[192] = {0};
+
+        if (mp4_probe_file(media_path, &info, probe_error, sizeof(probe_error))) {
+            printf("MP4 container: valid basic box structure\n");
+            printf("Major brand: %s\n", info.major_brand[0] ? info.major_brand : "unknown");
+            printf("File size: %llu bytes\n",
+                   (unsigned long long)info.file_size);
+            printf("Duration: %llu.%03llu seconds\n",
+                   (unsigned long long)(info.duration_ms / 1000ULL),
+                   (unsigned long long)(info.duration_ms % 1000ULL));
+            printf("Video: %s, %ux%u\n",
+                   mp4_video_codec_name(info.video_codec), info.width, info.height);
+            if (info.video_codec == Mp4VideoCodec_H264 && info.avc_profile_idc != 0) {
+                printf("AVC profile/level: %u / %u\n",
+                       info.avc_profile_idc, info.avc_level_idc);
+            }
+            printf("Audio: %s\n", mp4_audio_codec_name(info.audio_codec));
+            printf("Fragmented MP4: %s\n", info.fragmented ? "yes" : "no");
+            printf("Fast-start layout: %s\n",
+                   info.moov_before_mdat ? "yes" : "no");
+
+            if (mp4_is_switch_720p_candidate(&info)) {
+                printf("\nBase input profile: H.264 1280x720 - candidate\n");
+            } else {
+                printf("\nBase input profile: not yet suitable for the first video path\n");
+            }
+        } else {
+            printf("MP4 inspection failed:\n%s\n", probe_error);
+        }
+
+        printf("\nVideo Album writing is not enabled yet.\n");
+        printf("The MP4 is only inspected; no data is changed or added.\n");
+        printf("\nA: Run MP4 preflight check   B: choose another file   +: exit\n");
+    } else {
+        printf("The Switch system Album service will convert and save\n");
+        printf("the image as a genuine Switch screenshot entry.\n");
+        printf("The original file will remain unchanged.\n\n");
+        printf("A: Add image to Album   B: choose another image   +: exit\n");
+    }
+
     consoleUpdate(NULL);
 }
 
@@ -454,8 +503,52 @@ static bool save_image_to_album(const char *media_path,
     return true;
 }
 
+static bool save_video_preflight(const char *media_path,
+                                char *message,
+                                size_t message_size)
+{
+    Mp4Info info;
+    char probe_error[192] = {0};
+
+    if (!mp4_probe_file(media_path, &info, probe_error, sizeof(probe_error))) {
+        snprintf(message, message_size, "MP4 inspection failed: %s", probe_error);
+        return false;
+    }
+
+    if (!mp4_is_switch_720p_candidate(&info)) {
+        snprintf(message, message_size,
+                 "MP4 is structurally readable, but it is outside the current "
+                 "H.264 1280x720 non-fragmented input profile "
+                 "(found %s %ux%u, audio %s). No Album data was written.",
+                 mp4_video_codec_name(info.video_codec),
+                 info.width, info.height,
+                 mp4_audio_codec_name(info.audio_codec));
+        return false;
+    }
+
+    snprintf(message, message_size,
+             "MP4 preflight passed: H.264 1280x720, duration %llu.%03llu s. "
+             "The Album movie MakerNote, CMAC and chunk-hash writer are not "
+             "implemented yet, so no file was written.",
+             (unsigned long long)(info.duration_ms / 1000ULL),
+             (unsigned long long)(info.duration_ms % 1000ULL));
+    return false;
+}
+
+static bool save_selected_media(const char *media_path,
+                                const InstalledTitle *title,
+                                char *message,
+                                size_t message_size)
+{
+    if (is_mp4_path(media_path))
+        return save_video_preflight(media_path, message, message_size);
+
+    return save_image_to_album(media_path, title, message, message_size);
+}
+
 static void show_save_result(const InstalledTitle *title,
                              bool succeeded,
+                             bool is_video,
                              const char *message)
 {
     TimeCalendarTime calendar = {0};
@@ -465,7 +558,9 @@ static void show_save_result(const InstalledTitle *title,
     consoleClear();
     printf("AlbumSigner - Save result\n");
     printf("=========================\n\n");
-    printf("%s\n\n", succeeded ? "SYSTEM ACCEPTED THE IMAGE" : "IMAGE WAS NOT SAVED");
+    printf("%s\n\n",
+           succeeded ? "SYSTEM ACCEPTED THE IMAGE" :
+           (is_video ? "VIDEO NOT ADDED TO ALBUM" : "IMAGE WAS NOT SAVED"));
     printf("%s\n\n", message);
     printf("Selected game: %s\n", title->name);
     printf("Title ID: %016llX\n",
@@ -583,11 +678,12 @@ int albumsigner_run(void)
 
         if (add_to_album) {
             char result_message[384] = {0};
-            const bool saved = save_image_to_album(
+            const bool video_input = is_mp4_path(media_path);
+            const bool saved = save_selected_media(
                 media_path, &titles[selected_title],
                 result_message, sizeof(result_message)
             );
-            show_save_result(&titles[selected_title], saved, result_message);
+            show_save_result(&titles[selected_title], saved, video_input, result_message);
 
             bool leave_result = false;
             while (appletMainLoop() && !leave_result) {

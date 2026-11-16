@@ -75,9 +75,24 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  host-tests:
+    name: Native MP4 parser tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Compile and run MP4 parser tests
+        run: |
+          set -euo pipefail
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Isource source/video_probe.c tests/test_video_probe.c \
+            -o video-probe-tests
+          ./video-probe-tests
+
   publish-release:
     name: Publish release after successful test build
-    needs: test-build
+    needs: [test-build, host-tests]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

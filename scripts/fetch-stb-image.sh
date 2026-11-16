@@ -22,8 +22,18 @@ if command -v curl >/dev/null 2>&1; then
     curl --fail --location --silent --show-error --retry 3 "${URL}" --output "${TMP}"
 elif command -v wget >/dev/null 2>&1; then
     wget --quiet "${URL}" --output-document="${TMP}"
+elif command -v python3 >/dev/null 2>&1; then
+    python3 - "${URL}" "${TMP}" <<'PY'
+import sys
+import urllib.request
+
+url, output = sys.argv[1], sys.argv[2]
+request = urllib.request.Request(url, headers={"User-Agent": "RandomNROIdeas-build"})
+with urllib.request.urlopen(request, timeout=30) as response, open(output, "wb") as target:
+    target.write(response.read())
+PY
 else
-    echo "AlbumSigner dependency fetch requires curl or wget." >&2
+    echo "AlbumSigner dependency fetch requires curl, wget, or python3." >&2
     exit 1
 fi
 

@@ -76,13 +76,13 @@ jobs:
           retention-days: 14
 
   host-tests:
-    name: Native MP4 parser tests
+    name: Native video and metadata contract tests
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Compile and run MP4 parser tests
+      - name: Compile and run host-side pipeline contract tests
         run: |
           set -euo pipefail
           cc -std=c11 -Wall -Wextra -Werror \
@@ -94,6 +94,11 @@ jobs:
             -Isource -Itests source/video_probe.c source/album_video_writer.c \
             tests/test_album_video_writer.c -o album-video-writer-tests
           ./album-video-writer-tests
+
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Isource source/caps_sc_proto_contract.c tests/test_caps_sc_proto_contract.c \
+            -o caps-sc-contract-tests
+          ./caps-sc-contract-tests
 
   publish-release:
     name: Publish release after successful test build

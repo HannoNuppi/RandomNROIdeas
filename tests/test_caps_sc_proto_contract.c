@@ -89,7 +89,7 @@ int main(void)
     request.metadata_output_size = CAPS_SC_PROTO_OUTPUT_BUFFER_MIN_SIZE - 1;
     assert(!caps_sc_proto_validate_rgba_request(&request, 0x68,
                                                 error, sizeof(error)));
-    assert(strstr(error, "metadata output buffer") != NULL);
+    assert(strstr(error, "Metadata output buffer") != NULL);
 
     make_valid_request(&request, &input_v19, 0x78,
                        &dummy, &dummy, &dummy);

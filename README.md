@@ -6,7 +6,7 @@ A collection of Nintendo Switch homebrew experiments. The repository currently b
 
 Every push to `main` runs the Switch compiler and a CI smoke test. The Switch build checks that the ELF is an AArch64 executable, the NRO exists, and the NRO header contains the expected `NRO0` magic.
 
-A separate host-side test job exercises the MP4 box parser and the streaming Album movie writer with valid, unsupported, fragmented, malformed, successful, and aborted-write fixtures. A GitHub prerelease is published only after both host tests and the Switch NRO smoke test succeed. Each release gets a unique `build-<run>-<attempt>` tag. Pull requests are build-tested but do not publish releases.
+A separate host-side test job exercises the MP4 box parser, the streaming Album movie writer, and the version-dependent `caps:sc` command 1107 contract. It includes valid, unsupported, fragmented, malformed, successful, and aborted-write cases. A GitHub prerelease is published only after all host tests and the Switch NRO smoke test succeed. Each release gets a unique `build-<run>-<attempt>` tag. Pull requests are build-tested but do not publish releases.
 
 The build fetches a pinned `stb_image.h` header at compile time; no image codec packages or package manager are needed. The built NRO has no runtime network dependency.
 
@@ -25,14 +25,16 @@ The output is `RandomNROIdeas.nro` in the repository root.
 
 ## Project layout
 
-- `.github/workflows/build-nro.yml` — compile, smoke-test, run MP4 parser tests, upload artifacts, and publish prereleases
+- `.github/workflows/build-nro.yml` — compile, smoke-test, run MP4/writer/metadata contract tests, upload artifacts, and publish prereleases
 - `source/main.c` — application entry point
 - `source/albumsigner.c` — native AlbumSigner application and UI
 - `source/image_decode.c` — JPEG/PNG decoding and 1280x720 RGBA conversion
 - `source/video_probe.c` — bounded ISO BMFF/MP4 container and track inspection
 - `source/album_video_writer.c` — 256-KiB streamed data/metadata writer with transaction cleanup
 - `source/album_video_caps_backend.c` — libnx `caps:c` AlbumMovieWriteStream adapter
-- `tests/test_video_probe.c` and `tests/test_album_video_writer.c` — host-side MP4 and stream-writer regression tests
+- `source/caps_sc_proto_call.c` — experimental libnx adapter for `caps:sc` command 1107 (RGBA movie metadata generation)
+- `source/caps_sc_proto_contract.c` — firmware-specific IPC size and buffer contract validation
+- `tests/test_video_probe.c`, `tests/test_album_video_writer.c`, and `tests/test_caps_sc_proto_contract.c` — host-side regression tests
 - `ideas/01-albumsigner.md` — AlbumSigner requirements and implementation plan
 
 ## AlbumSigner status
@@ -48,12 +50,13 @@ The output is `RandomNROIdeas.nro` in the repository root.
 - Inspect MP4 box structure, video codec, resolution, audio codec, duration, and fragmented/fast-start flags without decoding or changing the source file.
 - Run host-side regression tests for MP4 parsing and the streamed writer's successful and abort paths.
 - Build a libnx `caps:c` backend for the system's `AlbumMovieWriteStream`, which can stream video data and a prebuilt metadata section into the normal Album. This backend is deliberately not called by the UI yet.
+- Add an experimental, version-aware wrapper for `caps:sc` cmd 1107 (`CreateProtoMovieMetaDataRgbaEx2`) with the documented HOS 5-18 and HOS 19+ scalar sizes and IPC buffer directions. The wrapper is not called yet because its opaque input-block contents and output-value meanings remain unverified.
 
 The original media file remains untouched. The NRO does not extract or embed Nintendo's private Album keys. Images are authenticated by `caps:su`; the video backend delegates storage/commit to `caps:c`, but its required movie metadata is not generated yet.
 
 **Not yet implemented or verified:**
 
-- Album video metadata generation: JPEG thumbnail, 0x498-byte movie MakerNote, encrypted metadata, movie CMAC, and SHA-256 chunk-hash table. The generic `caps:c` stream writer is implemented, but no valid metadata package is generated yet and the UI does not call it. The related `caps:sc` ProtoMovieMetaData commands are being researched as a possible system-side generator.
+- Album video metadata generation: JPEG thumbnail, 0x498-byte movie MakerNote, encrypted metadata, movie CMAC, and SHA-256 chunk-hash table. The `caps:c` stream writer and a raw adapter for `caps:sc` command 1107 are implemented, but the 1107 parameter blocks are still opaque and the returned values are not understood. No valid metadata package is generated yet, and the UI does not call either video backend.
 - Video transcoding/remuxing on the Switch. The initial preflight target is non-fragmented H.264/AVC at 1280x720 with AAC audio (or no audio); passing preflight does not mean the file is Album-ready.
 - Real-console confirmation that selected-game attribution is accepted on all supported Switch 1 firmware.
 - Switch 2 compatibility testing.
